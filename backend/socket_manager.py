@@ -304,7 +304,12 @@ class SocketManager:
             elif msg_type == "RESET_ROOM":
                 if room.state != "PODIUM":
                     return
-                new_prompts = message.get("prompts", room.prompts)
+                # Frontend sends pack_data: {title, prompts} or prompts: [...]
+                pack_data = message.get("pack_data")
+                if pack_data and isinstance(pack_data, dict):
+                    new_prompts = pack_data.get("prompts", room.prompts)
+                else:
+                    new_prompts = message.get("prompts", room.prompts)
                 new_timer = message.get("timer_seconds", room.timer_seconds)
                 new_show_votes = message.get("show_votes", room.show_votes)
                 room.reset_for_new_game(new_prompts, new_timer, new_show_votes)

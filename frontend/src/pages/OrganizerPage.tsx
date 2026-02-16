@@ -53,6 +53,11 @@ export default function OrganizerPage() {
     const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
     const [hasVoted, setHasVoted] = useState(false);
 
+    // Auto-advance
+    const [autoAdvance, setAutoAdvance] = useState(true);
+    const [autoCountdown, setAutoCountdown] = useState(0);
+    const autoTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
     // Refs
     const wsRef = useRef<WebSocket | null>(null);
     const stateRef = useRef<OrganizerState>('PROMPT');
@@ -314,6 +319,36 @@ export default function OrganizerPage() {
         setState('PROMPT');
     };
 
+    // Auto-advance: countdown when in REVEAL + auto mode
+    useEffect(() => {
+        if (autoTimerRef.current) {
+            clearInterval(autoTimerRef.current);
+            autoTimerRef.current = null;
+        }
+        if (state !== 'REVEAL' || !autoAdvance) {
+            setAutoCountdown(0);
+            return;
+        }
+        setAutoCountdown(7);
+        autoTimerRef.current = setInterval(() => {
+            setAutoCountdown(prev => {
+                if (prev <= 1) {
+                    if (autoTimerRef.current) clearInterval(autoTimerRef.current);
+                    autoTimerRef.current = null;
+                    wsRef.current?.send(JSON.stringify({ type: 'NEXT_QUESTION' }));
+                    return 0;
+                }
+                return prev - 1;
+            });
+        }, 1000);
+        return () => {
+            if (autoTimerRef.current) {
+                clearInterval(autoTimerRef.current);
+                autoTimerRef.current = null;
+            }
+        };
+    }, [state, autoAdvance]);
+
     const joinUrl = `http://${networkIp}:5173/join?room=${roomCode}`;
 
     return (
@@ -493,9 +528,40 @@ export default function OrganizerPage() {
                             <button onClick={endGame} className="btn btn-secondary" style={{ flexShrink: 0, paddingLeft: 16, paddingRight: 16 }}>
                                 End
                             </button>
-                            <button onClick={nextQuestion} className="btn btn-primary btn-glow" style={{ flex: 1 }}>
-                                Next Question
-                            </button>
+                            {autoAdvance ? (
+                                <div style={{ flex: 1, display: 'flex', gap: 8 }}>
+                                    <button
+                                        onClick={() => {
+                                            if (autoTimerRef.current) { clearInterval(autoTimerRef.current); autoTimerRef.current = null; }
+                                            wsRef.current?.send(JSON.stringify({ type: 'NEXT_QUESTION' }));
+                                        }}
+                                        className="btn btn-primary btn-glow"
+                                        style={{ flex: 1 }}
+                                    >
+                                        Next {autoCountdown > 0 ? `(${autoCountdown}s)` : ''}
+                                    </button>
+                                    <button
+                                        onClick={() => setAutoAdvance(false)}
+                                        className="btn btn-secondary"
+                                        style={{ flexShrink: 0, paddingLeft: 12, paddingRight: 12, fontSize: 13 }}
+                                    >
+                                        Manual
+                                    </button>
+                                </div>
+                            ) : (
+                                <div style={{ flex: 1, display: 'flex', gap: 8 }}>
+                                    <button onClick={nextQuestion} className="btn btn-primary btn-glow" style={{ flex: 1 }}>
+                                        Next Question
+                                    </button>
+                                    <button
+                                        onClick={() => setAutoAdvance(true)}
+                                        className="btn btn-secondary"
+                                        style={{ flexShrink: 0, paddingLeft: 12, paddingRight: 12, fontSize: 13 }}
+                                    >
+                                        Auto
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     </div>
                 )}

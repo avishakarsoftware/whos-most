@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { QRCodeSVG } from 'qrcode.react';
+import { QRCodeCanvas } from 'qrcode.react';
 import { WS_URL } from '../config';
 import { type PlayerInfo, type RoundResult, type LeaderboardEntry, type Superlative, type PodiumEntry } from '../types';
 import AnimatedNumber from '../components/AnimatedNumber';
@@ -16,9 +16,12 @@ const AVATAR_COLORS = [
 ];
 
 export default function SpectatorPage() {
-    const [searchParams] = useSearchParams();
-    const roomCode = searchParams.get('room') || '';
-    const [gameState, setGameState] = useState<SpectatorState>('CONNECTING');
+    const [searchParams, setSearchParams] = useSearchParams();
+    const roomFromUrl = searchParams.get('room') || '';
+    const [roomCode, setRoomCode] = useState(roomFromUrl);
+    const [roomInput, setRoomInput] = useState('');
+    const [joined, setJoined] = useState(!!roomFromUrl);
+    const [gameState, setGameState] = useState<SpectatorState>(roomFromUrl ? 'CONNECTING' : 'LOBBY');
     const [players, setPlayers] = useState<PlayerInfo[]>([]);
     const [playerCount, setPlayerCount] = useState(0);
 
@@ -41,8 +44,17 @@ export default function SpectatorPage() {
     const joinUrl = `http://${window.location.hostname}:5173/join?room=${roomCode}`;
     const displayUrl = `${window.location.hostname}:5173/join`;
 
+    const handleJoinRoom = () => {
+        const code = roomInput.trim().toUpperCase();
+        if (code.length < 4) return;
+        setRoomCode(code);
+        setJoined(true);
+        setGameState('CONNECTING');
+        setSearchParams({ room: code });
+    };
+
     useEffect(() => {
-        if (!roomCode) return;
+        if (!joined || !roomCode) return;
         const clientId = `spectator-${Date.now()}`;
         const ws = new WebSocket(`${WS_URL}/ws/${roomCode}/${clientId}?spectator=true`);
 
@@ -116,7 +128,7 @@ export default function SpectatorPage() {
         ws.onclose = () => setGameState('DISCONNECTED');
 
         return () => ws.close();
-    }, [roomCode]);
+    }, [joined, roomCode]);
 
     // Auto-fullscreen
     useEffect(() => {
@@ -143,10 +155,46 @@ export default function SpectatorPage() {
         }
     }, [podiumReveal]);
 
-    if (!roomCode) {
+    if (!joined) {
         return (
-            <div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <p style={{ color: 'var(--color-text-secondary)' }}>Add ?room=CODE to the URL</p>
+            <div style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 60px' }}>
+                <div className="animate-in" style={{ textAlign: 'center', maxWidth: 500, width: '100%' }}>
+                    <div style={{ fontSize: '4rem', marginBottom: 16 }}>📺</div>
+                    <h1 className="hero-title" style={{ fontSize: '3rem', marginBottom: 8 }}>TV Mode</h1>
+                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '1.25rem', marginBottom: 40 }}>
+                        Enter the room code to spectate
+                    </p>
+                    <input
+                        type="text"
+                        value={roomInput}
+                        onChange={(e) => setRoomInput(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6))}
+                        onKeyDown={(e) => e.key === 'Enter' && handleJoinRoom()}
+                        placeholder="ROOM CODE"
+                        autoFocus
+                        style={{
+                            width: '100%',
+                            textAlign: 'center',
+                            fontSize: '3rem',
+                            fontWeight: 800,
+                            letterSpacing: '0.3em',
+                            padding: '20px 24px',
+                            borderRadius: 16,
+                            border: '2px solid rgba(255, 255, 255, 0.15)',
+                            background: 'var(--color-card)',
+                            color: 'var(--color-text)',
+                            outline: 'none',
+                            marginBottom: 24,
+                        }}
+                    />
+                    <button
+                        onClick={handleJoinRoom}
+                        disabled={roomInput.trim().length < 4}
+                        className="btn btn-primary btn-glow"
+                        style={{ width: '100%', fontSize: '1.25rem', padding: '16px 24px' }}
+                    >
+                        Watch Game
+                    </button>
+                </div>
             </div>
         );
     }
@@ -174,6 +222,15 @@ export default function SpectatorPage() {
                                     ))}
                                 </div>
                             )}
+                            {(gameState === 'ERROR' || gameState === 'DISCONNECTED') && (
+                                <button
+                                    onClick={() => { setJoined(false); setRoomInput(''); setSearchParams({}); }}
+                                    className="btn btn-secondary"
+                                    style={{ marginTop: 24, fontSize: '1.125rem' }}
+                                >
+                                    Try Another Room
+                                </button>
+                            )}
                         </div>
                     )}
 
@@ -185,7 +242,7 @@ export default function SpectatorPage() {
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 48, marginBottom: 32 }}>
                                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                                     <div className="qr-container" style={{ marginBottom: 8 }}>
-                                        <QRCodeSVG value={joinUrl} size={200} bgColor="white" fgColor="#000000" level="H" />
+                                        <QRCodeCanvas value={joinUrl} size={200} bgColor="white" fgColor="#000000" level="H" />
                                     </div>
                                     <p style={{ color: 'var(--color-text-secondary)', fontSize: 14 }}>Scan with your phone</p>
                                 </div>
@@ -252,9 +309,31 @@ export default function SpectatorPage() {
                                 </p>
                             </div>
 
-                            <p style={{ textAlign: 'center', fontSize: '1.25rem', color: 'var(--color-text-secondary)' }}>
+                            <p style={{ textAlign: 'center', fontSize: '1.25rem', color: 'var(--color-text-secondary)', marginBottom: 24 }}>
                                 <span style={{ fontWeight: 700, color: 'var(--color-text)' }}>{votedCount}</span> of {playerCount} voted
                             </p>
+
+                            {/* Player grid */}
+                            {players.length > 0 && (
+                                <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 12, maxWidth: 800, margin: '0 auto' }}>
+                                    {players.map((player, i) => (
+                                        <div key={player.nickname} style={{
+                                            display: 'inline-flex', alignItems: 'center', gap: 10,
+                                            padding: '10px 20px', borderRadius: 9999,
+                                            background: 'var(--color-card)', border: '1px solid rgba(255, 255, 255, 0.08)',
+                                        }}>
+                                            <div style={{
+                                                width: 36, height: 36, minWidth: 36, borderRadius: '50%',
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                backgroundColor: AVATAR_COLORS[i % AVATAR_COLORS.length],
+                                            }}>
+                                                <span style={{ fontSize: '1.25rem', lineHeight: 1 }}>{player.avatar || player.nickname.slice(0, 2).toUpperCase()}</span>
+                                            </div>
+                                            <span style={{ fontSize: '1.125rem', fontWeight: 600 }}>{player.nickname}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     )}
 
